@@ -1,0 +1,750 @@
+--[[
+    =========================================================
+    PART 1: SERVICES, SETTINGS & PRELOADING
+    =========================================================
+]]
+
+getgenv().LegacySettings = {
+    Year = 2013,
+    OldGraphics = true,
+    HideDisplayName = true,
+    SafeChat = true,
+    OldConsole = false,
+    OldBubbleChat = true
+}
+
+local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
+local StarterGui = game:GetService("StarterGui")
+local GuiService = game:GetService("GuiService")
+local TeleportService = game:GetService("TeleportService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local ContentProvider = game:GetService("ContentProvider")
+local UserInputService = game:GetService("UserInputService")
+local TextService = game:GetService("TextService")
+local TextChatService = game:GetService("TextChatService")
+local ChatService = game:GetService("Chat")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local TOUCH_SHEET = "rbxasset://textures/ui/TouchControlsSheet.png"
+
+-- Disable native Roblox bubble chat safely on both chat engines
+pcall(function()
+    TextChatService.BubbleChatConfiguration.Enabled = false
+end)
+pcall(function()
+    ChatService.BubbleChatEnabled = false
+end)
+
+-- Preload health, chat bubble, and mobile UI assets
+task.spawn(function()
+    ContentProvider:PreloadAsync({
+        "rbxassetid://35238053",
+        "rbxassetid://35238036",
+        "rbxassetid://154646431",
+        "rbxassetid://34854607",
+        "rbxassetid://2582470061",
+        "rbxassetid://2582470060",
+        TOUCH_SHEET
+    })
+end)
+
+pcall(function()
+    StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, true)
+    StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
+    StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, true)
+    StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, false)
+end)
+
+GuiService.MenuOpened:Connect(function()
+    if GuiService.IsMenuOpened then pcall(function() GuiService:SetMenuOpened(false) end) end
+end)
+
+local function eliminateNativeMenuCompletely()
+    pcall(function()
+        if CoreGui:FindFirstChild("TopBarApp") then CoreGui.TopBarApp:Destroy() end
+        local robloxGui = CoreGui:FindFirstChild("RobloxGui")
+        if robloxGui then
+            for _, child in ipairs(robloxGui:GetChildren()) do
+                local name = string.lower(child.Name)
+                if name == "topbar" or name == "chrome" or name == "unibarleft" or name == "menubutton" then
+                    child.Visible = false
+                end
+            end
+        end
+        local expChat = CoreGui:FindFirstChild("ExperienceChat")
+        if expChat and expChat:FindFirstChild("appLayout") and expChat.appLayout:FindFirstChild("topBar") then
+            expChat.appLayout.topBar.Visible = false
+        end
+    end)
+end
+eliminateNativeMenuCompletely()
+
+-- Persistent Modern Touch UI Hider (Preserves Backpack/Inventory)
+task.spawn(function()
+    while true do
+        local modernTouch = PlayerGui:FindFirstChild("TouchGui")
+        if modernTouch and modernTouch.Enabled then 
+            modernTouch.Enabled = false 
+        end
+        task.wait(0.5)
+    end
+end)
+
+--[[
+    =========================================================
+    PART 2: UNIFIED MAIN GUI CONTAINERS (SAFE PARENTING)
+    =========================================================
+]]
+
+local targetParent = CoreGui
+pcall(function() if gethui then targetParent = gethui() end end)
+
+local guiName = "LegacyMobileUI_FunctionalReplacement"
+if targetParent:FindFirstChild(guiName) then targetParent[guiName]:Destroy() end
+local dialogGuiName = "LegacyMobileUI_Dialog"
+if targetParent:FindFirstChild(dialogGuiName) then targetParent[dialogGuiName]:Destroy() end
+local touchGuiName = "LegacyTouchControls"
+if targetParent:FindFirstChild(touchGuiName) then targetParent[touchGuiName]:Destroy() end
+if PlayerGui:FindFirstChild(touchGuiName) then PlayerGui[touchGuiName]:Destroy() end
+
+-- Main UI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = guiName
+screenGui.IgnoreGuiInset = true
+screenGui.ResetOnSpawn = false
+screenGui.DisplayOrder = 999999999 
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+screenGui.Parent = targetParent
+
+-- Dialog UI
+local dialogGui = Instance.new("ScreenGui")
+dialogGui.Name = dialogGuiName
+dialogGui.IgnoreGuiInset = false 
+dialogGui.ResetOnSpawn = false
+dialogGui.DisplayOrder = 999999999 
+dialogGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+dialogGui.Parent = targetParent
+
+-- Touch Controls UI (Parented to targetParent to survive resets)
+local touchScreenGui = Instance.new("ScreenGui")
+touchScreenGui.Name = touchGuiName
+touchScreenGui.ResetOnSpawn = false
+touchScreenGui.DisplayOrder = 999
+touchScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+touchScreenGui.Parent = targetParent
+
+--[[
+    =========================================================
+    PART 3: 2018 LEGACY MOBILE TOUCH CONTROLS
+    =========================================================
+]]
+
+local JoystickFrame = Instance.new("Frame", touchScreenGui)
+JoystickFrame.Name = "JoystickFrame"
+JoystickFrame.Size = UDim2.new(0, 90, 0, 90)
+JoystickFrame.Position = UDim2.new(0, 30, 1, -120)
+JoystickFrame.BackgroundTransparency = 1
+JoystickFrame.Active = true
+
+local JoystickBase = Instance.new("ImageLabel", JoystickFrame)
+JoystickBase.Name = "Base"
+JoystickBase.Size = UDim2.new(1, 0, 1, 0)
+JoystickBase.Image = TOUCH_SHEET
+JoystickBase.ImageRectOffset = Vector2.new(0, 0)
+JoystickBase.ImageRectSize = Vector2.new(220, 220)
+JoystickBase.BackgroundTransparency = 1
+
+local JoystickStick = Instance.new("ImageLabel", JoystickFrame)
+JoystickStick.Name = "Stick"
+JoystickStick.Size = UDim2.new(0, 42, 0, 42) 
+JoystickStick.Position = UDim2.new(0.5, 0, 0.5, 0)
+JoystickStick.AnchorPoint = Vector2.new(0.5, 0.5)
+JoystickStick.Image = TOUCH_SHEET
+JoystickStick.ImageRectOffset = Vector2.new(220, 0)
+JoystickStick.ImageRectSize = Vector2.new(111, 111)
+JoystickStick.BackgroundTransparency = 1
+JoystickStick.ZIndex = 2
+
+local JumpButton = Instance.new("ImageButton", touchScreenGui)
+JumpButton.Name = "JumpButton"
+JumpButton.Size = UDim2.new(0, 90, 0, 90)
+JumpButton.Position = UDim2.new(1, -120, 1, -120)
+JumpButton.BackgroundTransparency = 1
+JumpButton.Image = TOUCH_SHEET
+JumpButton.ImageRectOffset = Vector2.new(176, 222)
+JumpButton.ImageRectSize = Vector2.new(174, 174)
+JumpButton.Active = true
+
+local moveVector = Vector3.new(0,0,0)
+local walkSpeedFactor = 0
+local isJumpButtonDown = false
+local moveTouchObject = nil
+local jumpTouchObject = nil 
+local maxRadius = 45 
+
+JoystickFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch and not moveTouchObject then
+        moveTouchObject = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == moveTouchObject then
+        local center = JoystickFrame.AbsolutePosition + (JoystickFrame.AbsoluteSize / 2)
+        local diff = Vector2.new(input.Position.X, input.Position.Y) - center
+        local dist = math.min(diff.Magnitude, maxRadius)
+        walkSpeedFactor = dist / maxRadius
+        local dir = diff.Magnitude > 0 and diff.Unit or Vector2.new(0,0)
+        JoystickStick.Position = UDim2.new(0.5, dir.X * dist, 0.5, dir.Y * dist)
+        moveVector = Vector3.new(dir.X, 0, dir.Y)
+        
+    elseif input == jumpTouchObject then
+        local pos = input.Position
+        local absPos = JumpButton.AbsolutePosition
+        local absSize = JumpButton.AbsoluteSize
+        
+        local isInside = (pos.X >= absPos.X and pos.X <= absPos.X + absSize.X and 
+                          pos.Y >= absPos.Y and pos.Y <= absPos.Y + absSize.Y)
+                          
+        if not isInside then
+            jumpTouchObject = nil
+            isJumpButtonDown = false
+            JumpButton.ImageRectOffset = Vector2.new(176, 222)
+        end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input == moveTouchObject then
+        moveTouchObject = nil; moveVector = Vector3.new(0,0,0); walkSpeedFactor = 0
+        JoystickStick.Position = UDim2.new(0.5, 0, 0.5, 0)
+    end
+end)
+
+JumpButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch and not jumpTouchObject then
+        jumpTouchObject = input
+        isJumpButtonDown = true
+        JumpButton.ImageRectOffset = Vector2.new(0, 222)
+    end
+end)
+
+JumpButton.InputEnded:Connect(function(input)
+    if input == jumpTouchObject then
+        jumpTouchObject = nil
+        isJumpButtonDown = false
+        JumpButton.ImageRectOffset = Vector2.new(176, 222)
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+
+    if moveVector.Magnitude > 0 then
+        LocalPlayer:Move(moveVector * walkSpeedFactor, true)
+    end
+    
+    if isJumpButtonDown then
+        local state = hum:GetState()
+        local canJump = (hum.FloorMaterial ~= Enum.Material.Air or hum.Sit or state == Enum.HumanoidStateType.Climbing or state == Enum.HumanoidStateType.Swimming)
+        
+        if canJump then
+            hum.Jump = true
+            if state == Enum.HumanoidStateType.Climbing then
+                hum:ChangeState(Enum.HumanoidStateType.Jumping)
+            end
+        end
+    end
+end)
+
+--[[
+    =========================================================
+    PART 4: CLASSIC HEALTH SYSTEM
+    =========================================================
+]]
+
+local HurtOverlay = Instance.new("ImageLabel")
+HurtOverlay.Name = "HurtOverlay"
+HurtOverlay.BackgroundTransparency = 1
+HurtOverlay.Image = "rbxassetid://34854607"
+HurtOverlay.Size = UDim2.new(1, 0, 1, 0)
+HurtOverlay.Position = UDim2.new(0, 0, 0, 0)
+HurtOverlay.Visible = false
+HurtOverlay.ZIndex = 1
+HurtOverlay.Parent = screenGui
+
+local HealthFrame = Instance.new("Frame")
+HealthFrame.Name = "HealthFrame"
+HealthFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+HealthFrame.BorderColor3 = Color3.fromRGB(0, 0, 0)
+HealthFrame.Position = UDim2.new(0.5, -85, 1, -22)
+HealthFrame.Size = UDim2.new(0, 170, 0, 18)
+HealthFrame.ZIndex = 99999
+HealthFrame.Parent = screenGui
+
+local HealthBar = Instance.new("ImageLabel")
+HealthBar.Name = "HealthBar"
+HealthBar.BackgroundTransparency = 1
+HealthBar.Image = "rbxassetid://35238053"
+HealthBar.Size = UDim2.new(1, 0, 1, 0)
+HealthBar.ZIndex = 99999
+HealthBar.Parent = HealthFrame
+
+local HealthLabel = Instance.new("TextLabel")
+HealthLabel.Name = "HealthLabel"
+HealthLabel.Text = "Health  "
+HealthLabel.Font = Enum.Font.SourceSansBold
+HealthLabel.TextSize = 14
+HealthLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+HealthLabel.TextStrokeTransparency = 0
+HealthLabel.TextXAlignment = Enum.TextXAlignment.Right
+HealthLabel.BackgroundTransparency = 1
+HealthLabel.Size = UDim2.new(1, 0, 1, 0)
+HealthLabel.ZIndex = 99999
+HealthLabel.Parent = HealthFrame
+
+local lastHealth = 100
+local healthConn, diedConn, charConn
+
+local function AnimateHurtOverlay()
+    HurtOverlay.Size = UDim2.new(1, 0, 1, 0)
+    HurtOverlay.Position = UDim2.new(0, 0, 0, 0)
+    HurtOverlay.Visible = true
+
+    local tweenInfo = TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local tween = TweenService:Create(HurtOverlay, tweenInfo, {
+        Size = UDim2.new(20, 0, 20, 0),
+        Position = UDim2.new(-10, 0, -10, 0)
+    })
+    
+    tween:Play()
+    task.delay(10, function() HurtOverlay.Visible = false end)
+end
+
+local function UpdateGui(currentHealth, humanoid)
+    if not humanoid then return end
+    
+    local healthPercent = currentHealth / humanoid.MaxHealth
+    
+    if healthPercent == healthPercent then
+        if healthPercent > 0.25 then
+            HealthBar.Image = "rbxassetid://35238053"
+        else
+            HealthBar.Image = "rbxassetid://35238036"
+        end
+    else
+        HealthBar.Image = "rbxassetid://154646431"
+    end
+
+    local clampedPercent = math.max(math.min(healthPercent, 1), 0)
+    local damageTaken = lastHealth - currentHealth
+    lastHealth = currentHealth
+
+    local sizeTweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut)
+    local sizeTween = TweenService:Create(HealthBar, sizeTweenInfo, {
+        Size = UDim2.new(clampedPercent, 0, 1, 0)
+    })
+    sizeTween:Play()
+
+    if damageTaken > 0 and (humanoid.MaxHealth * 0.05 <= damageTaken) then
+        AnimateHurtOverlay()
+    end
+end
+
+local function setupCharacter(character)
+    local humanoid = character:WaitForChild("Humanoid", 5)
+    if not humanoid then return end
+
+    lastHealth = humanoid.Health
+    UpdateGui(humanoid.Health, humanoid)
+
+    if healthConn then healthConn:Disconnect() end
+    if diedConn then diedConn:Disconnect() end
+
+    healthConn = humanoid.HealthChanged:Connect(function(health) UpdateGui(health, humanoid) end)
+    diedConn = humanoid.Died:Connect(function() UpdateGui(0, humanoid) end)
+end
+
+if LocalPlayer.Character then task.spawn(function() setupCharacter(LocalPlayer.Character) end) end
+charConn = LocalPlayer.CharacterAdded:Connect(setupCharacter)
+
+--[[
+    =========================================================
+    PART 5: TOP LEFT UI CONTAINER & LEAVE MENU
+    =========================================================
+]]
+
+local container = Instance.new("Frame")
+container.Name = "ButtonContainer"
+container.Size = UDim2.new(0, 250, 0, 28.999) 
+container.Position = UDim2.new(0, 10, 0, 2)
+container.BackgroundTransparency = 1
+container.ZIndex = 99999
+container.Parent = screenGui
+
+local listLayout = Instance.new("UIListLayout", container)
+listLayout.FillDirection = Enum.FillDirection.Horizontal
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Padding = UDim.new(0, 0)
+
+local leaveButtonToggleState = false
+local updateLeaveButtonVisuals = nil
+
+local leaveDialog = Instance.new("Frame")
+leaveDialog.Name = "LeaveDialog"
+leaveDialog.Size = UDim2.new(0, 355, 0, 220)
+leaveDialog.AnchorPoint = Vector2.new(0.5, 0.5)
+leaveDialog.Position = UDim2.new(0.5, 0, 1.5, 0)
+leaveDialog.BackgroundColor3 = Color3.fromRGB(115, 115, 115)
+leaveDialog.BorderSizePixel = 0
+leaveDialog.Visible = false
+leaveDialog.ZIndex = 99999
+leaveDialog.Parent = dialogGui
+
+Instance.new("UICorner", leaveDialog).CornerRadius = UDim.new(0, 2)
+local dialogStroke = Instance.new("UIStroke", leaveDialog)
+dialogStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+dialogStroke.Color = Color3.fromRGB(255, 255, 255)
+dialogStroke.Thickness = 1
+
+local dialogMessage = Instance.new("TextLabel")
+dialogMessage.Size = UDim2.new(1, -30, 0, 110)
+dialogMessage.Position = UDim2.new(0, 15, 0, 15)
+dialogMessage.BackgroundTransparency = 1
+dialogMessage.Font = Enum.Font.SourceSansBold
+dialogMessage.Text = "Are you sure you want to leave this game?"
+dialogMessage.TextColor3 = Color3.fromRGB(255, 255, 255)
+dialogMessage.TextSize = 34
+dialogMessage.TextWrapped = true
+dialogMessage.TextXAlignment = Enum.TextXAlignment.Center
+dialogMessage.ZIndex = 999999
+dialogMessage.Parent = leaveDialog
+
+local function showLeaveDialog()
+    leaveDialog.Position = UDim2.new(0.5, 0, 1.5, 0)
+    leaveDialog.Visible = true
+    TweenService:Create(leaveDialog, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, 0, 0.5, -18)}):Play()
+end
+
+local function applyButtonPressEffect(btn)
+    local isPressed = false
+    btn.InputBegan:Connect(function(input) 
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
+            isPressed = true
+            TweenService:Create(btn, TweenInfo.new(0.12), {ImageColor3 = Color3.fromRGB(150, 150, 150)}):Play()
+        end 
+    end)
+    btn.InputEnded:Connect(function(input) 
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
+            if isPressed then
+                isPressed = false
+                TweenService:Create(btn, TweenInfo.new(0.12), {ImageColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+            end
+        end 
+    end)
+    btn.MouseLeave:Connect(function()
+        if isPressed then
+            isPressed = false
+            TweenService:Create(btn, TweenInfo.new(0.12), {ImageColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+        end
+    end)
+end
+
+local cancelBtn = Instance.new("ImageButton")
+cancelBtn.Name = "CancelButton"
+cancelBtn.Size = UDim2.new(0, 150, 0, 55)
+cancelBtn.Position = UDim2.new(0, 20, 1, -75)
+cancelBtn.BackgroundTransparency = 1
+cancelBtn.Image = "rbxassetid://5698789475"
+cancelBtn.ZIndex = 999999
+cancelBtn.Parent = leaveDialog
+
+applyButtonPressEffect(cancelBtn)
+
+cancelBtn.Activated:Connect(function()
+    leaveButtonToggleState = false
+    if updateLeaveButtonVisuals then updateLeaveButtonVisuals(false) end
+    local hideTween = TweenService:Create(leaveDialog, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Position = UDim2.new(0.5, 0, 1.5, 0)})
+    hideTween:Play()
+    hideTween.Completed:Connect(function() if not leaveButtonToggleState then leaveDialog.Visible = false end end)
+end)
+
+local confirmLeaveBtn = Instance.new("ImageButton")
+confirmLeaveBtn.Name = "ConfirmLeaveButton"
+confirmLeaveBtn.Size = UDim2.new(0, 150, 0, 55) 
+confirmLeaveBtn.Position = UDim2.new(0, 185, 1, -75)
+confirmLeaveBtn.BackgroundTransparency = 1
+confirmLeaveBtn.Image = "rbxassetid://5698790766"
+confirmLeaveBtn.ZIndex = 999999
+confirmLeaveBtn.Parent = leaveDialog
+
+applyButtonPressEffect(confirmLeaveBtn)
+
+confirmLeaveBtn.Activated:Connect(function()
+    pcall(function() TeleportService:TeleportToPlaceInstance(0, "") end)
+    task.wait(0.1)
+    pcall(function() game:Shutdown() end)
+end)
+
+local function createExactVintageLeaveButton()
+    local wrapper = Instance.new("Frame", container)
+    wrapper.Name = "LeaveIconWrapper"
+    wrapper.BackgroundTransparency = 1
+    wrapper.Size = UDim2.new(0, 71, 0, 28.999) 
+    wrapper.LayoutOrder = 1
+
+    local btn = Instance.new("ImageButton", wrapper)
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundTransparency = 1
+    btn.Image = "rbxassetid://107261331"
+    btn.AutoButtonColor = false
+    btn.ZIndex = 999999
+
+    local isPressed, isToggledDark = false, false
+
+    updateLeaveButtonVisuals = function(active)
+        isToggledDark = active
+        isPressed = false
+        TweenService:Create(btn, TweenInfo.new(0.12), {
+            ImageColor3 = active and Color3.fromRGB(150, 150, 150) or Color3.fromRGB(255, 255, 255)
+        }):Play()
+    end
+
+    btn.InputBegan:Connect(function(input) 
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
+            if not isToggledDark then
+                isPressed = true
+                TweenService:Create(btn, TweenInfo.new(0.12), {ImageColor3 = Color3.fromRGB(150, 150, 150)}):Play()
+            end
+        end 
+    end)
+    
+    btn.InputEnded:Connect(function(input) 
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
+            if isPressed and not isToggledDark then
+                isPressed = false
+                TweenService:Create(btn, TweenInfo.new(0.12), {ImageColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+            end
+        end 
+    end)
+    
+    btn.MouseLeave:Connect(function()
+        if isPressed and not isToggledDark then
+            isPressed = false
+            TweenService:Create(btn, TweenInfo.new(0.12), {ImageColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+        end
+    end)
+    
+    btn.Activated:Connect(function()
+        leaveButtonToggleState = not leaveButtonToggleState
+        if leaveButtonToggleState then
+            showLeaveDialog()
+        else
+            local hideTween = TweenService:Create(leaveDialog, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Position = UDim2.new(0.5, 0, 1.5, 0)})
+            hideTween:Play()
+            hideTween.Completed:Connect(function() if not leaveButtonToggleState then leaveDialog.Visible = false end end)
+        end
+        if updateLeaveButtonVisuals then updateLeaveButtonVisuals(leaveButtonToggleState) end
+    end)
+end
+createExactVintageLeaveButton()
+
+--[[
+    =========================================================
+    PART 6: UI HIJACKER (CHAT ENFORCER)
+    =========================================================
+]]
+
+local capturedChatButton = nil
+
+local function hijackLegacyUI(uiElement)
+    if not uiElement:IsA("GuiObject") then return end
+
+    pcall(function()
+        local current = uiElement
+        while current and current ~= game do
+            if current.Name == "LegacyMobileUI_FunctionalReplacement" or current.Name == "ClassicBubbleGui" or current.Name == "LegacyTouchControls" then return end
+            current = current.Parent
+        end
+
+        local name = string.lower(uiElement.Name or "")
+        local text = ""
+        if uiElement:IsA("TextLabel") or uiElement:IsA("TextButton") then
+            text = string.lower(uiElement.Text or "")
+        end
+        
+        if (text == "chat" or string.find(name, "chat") or string.find(name, "chaticon")) and uiElement:IsA("GuiButton") then
+            capturedChatButton = uiElement
+            capturedChatButton.Parent = container 
+            capturedChatButton.LayoutOrder = 2 
+            capturedChatButton.Visible = true
+            capturedChatButton.ZIndex = 999999
+
+        elseif text == "menu" or string.find(name, "menu") or string.find(name, "settings") then
+            uiElement.Position = UDim2.new(9999, 0, 9999, 0)
+            uiElement.Visible = false
+        end
+    end)
+end
+
+RunService.Heartbeat:Connect(function()
+    if capturedChatButton then
+        pcall(function()
+            if capturedChatButton.Parent ~= container then capturedChatButton.Parent = container end
+            if capturedChatButton.LayoutOrder ~= 2 then capturedChatButton.LayoutOrder = 2 end
+        end)
+    end
+end)
+
+local function setupHijacker(targetContainer)
+    if not targetContainer then return end
+    for _, element in ipairs(targetContainer:GetDescendants()) do hijackLegacyUI(element) end
+    targetContainer.DescendantAdded:Connect(function(element)
+        task.defer(function() hijackLegacyUI(element) end)
+    end)
+end
+
+setupHijacker(CoreGui)
+if gethui then setupHijacker(gethui()) end
+if LocalPlayer then
+    local pGui = LocalPlayer:WaitForChild("PlayerGui", 5)
+    setupHijacker(pGui)
+end
+
+--[[
+    =========================================================
+    PART 7: LOAD THE 2013 PAYLOAD 
+    =========================================================
+]]
+
+local success, errorMessage = pcall(function()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/yeku/legacy/refs/heads/main/Source.luau"))()
+end)
+
+if not success then
+    warn("Failed to load payload: " .. tostring(errorMessage))
+end
+
+--[[
+    =========================================================
+    PART 8: 2008 CLASSIC BUBBLE CHAT SYSTEM
+    =========================================================
+]]
+
+local function createClassicBubble(head, messageText)
+    if not head or not head:IsA("BasePart") then return end
+    
+    local oldBubble = head:FindFirstChild("ClassicBubbleGui")
+    if oldBubble then oldBubble:Destroy() end
+    
+    local classicFont = Font.new(
+        "rbxasset://fonts/families/Arial.json",
+        Enum.FontWeight.Regular,
+        Enum.FontStyle.Normal
+    )
+    local fontSize = 22
+    local maxTextWidth = 220 
+    
+    local absoluteTextSize = TextService:GetTextSize(
+        messageText, 
+        fontSize, 
+        Enum.Font.Arial, 
+        Vector2.new(maxTextWidth, 1000)
+    )
+    
+    local width = math.clamp(absoluteTextSize.X + 36, 75, maxTextWidth + 36)
+    local height = absoluteTextSize.Y + 24 + 12 
+    
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "ClassicBubbleGui"
+    billboard.Size = UDim2.new(0, width, 0, height)
+    billboard.Adornee = head
+    billboard.StudsOffset = Vector3.new(0, 3.2, 0)
+    billboard.AlwaysOnTop = false
+    billboard.MaxDistance = 40
+
+    local bubbleBody = Instance.new("ImageLabel")
+    bubbleBody.Name = "BubbleBody"
+    bubbleBody.Image = "rbxassetid://2582470061"
+    bubbleBody.BackgroundTransparency = 1
+    bubbleBody.ScaleType = Enum.ScaleType.Slice
+    bubbleBody.SliceCenter = Rect.new(29, 29, 67, 67)
+    bubbleBody.SliceScale = 0.5
+    bubbleBody.Size = UDim2.new(1, 0, 1, -2) 
+    bubbleBody.Parent = billboard
+
+    local bubbleTail = Instance.new("ImageLabel")
+    bubbleTail.Name = "BubbleTail"
+    bubbleTail.Size = UDim2.new(0, 16, 0, 12)
+    bubbleTail.Position = UDim2.new(0.5, -8, 1, -9.5)
+    bubbleTail.BackgroundTransparency = 1
+    bubbleTail.Image = "rbxassetid://2582470060"
+    bubbleTail.Parent = billboard
+
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Name = "BubbleText"
+    textLabel.Size = UDim2.new(1, -24, 1, -20)
+    textLabel.Position = UDim2.new(0, 12, 0, 10)
+    textLabel.BackgroundTransparency = 1
+    textLabel.FontFace = classicFont
+    textLabel.TextSize = fontSize
+    textLabel.TextColor3 = Color3.fromRGB(0, 0, 0)
+    textLabel.TextWrapped = true
+    textLabel.Text = messageText
+    textLabel.Parent = billboard
+    
+    billboard.Parent = head
+    
+    task.delay(10, function()
+        if billboard and billboard.Parent then
+            billboard:Destroy()
+        end
+    end)
+end
+
+local lastProcessedMessage = {}
+
+local function processPlayerChat(player, message)
+    if not player or typeof(message) ~= "string" or message == "" then return end
+    
+    local key = player.UserId
+    local now = os.clock()
+    if lastProcessedMessage[key] and lastProcessedMessage[key].text == message and (now - lastProcessedMessage[key].time) < 0.25 then
+        return
+    end
+    lastProcessedMessage[key] = { text = message, time = now }
+
+    local character = player.Character
+    if character then
+        local head = character:FindFirstChild("Head")
+        if head then
+            createClassicBubble(head, message)
+        end
+    end
+end
+
+local function trackPlayerBubbles(player)
+    player.Chatted:Connect(function(message)
+        processPlayerChat(player, message)
+    end)
+end
+
+for _, p in ipairs(Players:GetPlayers()) do
+    trackPlayerBubbles(p)
+end
+Players.PlayerAdded:Connect(trackPlayerBubbles)
+
+pcall(function()
+    TextChatService.MessageReceived:Connect(function(textChatMessage)
+        if textChatMessage.TextSource then
+            local senderPlayer = Players:GetPlayerByUserId(textChatMessage.TextSource.UserId)
+            if senderPlayer then
+                processPlayerChat(senderPlayer, textChatMessage.Text)
+            end
+        end
+    end)
+end)
