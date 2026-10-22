@@ -817,11 +817,14 @@ local function startPhoneBackpack(legacyGui)
     local DRAG_THRESHOLD = 8
     local slideInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
-    local function keepHidden(guiObject)
-        if not guiObject then return end
-        guiObject.Visible = false
-        guiObject:GetPropertyChangedSignal("Visible"):Connect(function()
-            if guiObject.Visible then guiObject.Visible = false end
+    local hiddenGuis = setmetatable({}, { __mode = "k" })
+    local function keepHidden(gui)
+        if not gui or hiddenGuis[gui] then return end
+        local property = gui:IsA("LayerCollector") and "Enabled" or "Visible"
+        hiddenGuis[gui] = true
+        gui[property] = false
+        gui:GetPropertyChangedSignal(property):Connect(function()
+            if gui[property] then gui[property] = false end
         end)
     end
 
@@ -830,6 +833,34 @@ local function startPhoneBackpack(legacyGui)
         keepHidden(legacyGui:WaitForChild("Backpack", 30))
         local controlFrame = legacyGui:WaitForChild("ControlFrame", 30)
         keepHidden(controlFrame and controlFrame:WaitForChild("BackpackButton", 30))
+    end)
+
+    -- Only the 2013 backpack is shown: keep Roblox's own backpack off even when the game turns it on
+    local function disableRobloxBackpack()
+        pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false) end)
+    end
+    disableRobloxBackpack()
+    StarterGui.CoreGuiChangedSignal:Connect(function(coreGuiType, enabled)
+        if enabled and (coreGuiType == Enum.CoreGuiType.Backpack or coreGuiType == Enum.CoreGuiType.All) then
+            disableRobloxBackpack()
+        end
+    end)
+
+    -- ...and hide the game's own inventories and hotbars
+    local CUSTOM_INVENTORY_WORDS = { "backpack", "inventory", "hotbar", "toolbar" }
+    local function hideIfCustomInventory(gui)
+        if not (gui:IsA("GuiObject") or gui:IsA("LayerCollector")) then return end
+        local name = string.lower(gui.Name)
+        for _, word in ipairs(CUSTOM_INVENTORY_WORDS) do
+            if string.find(name, word, 1, true) then
+                keepHidden(gui)
+                return
+            end
+        end
+    end
+    for _, gui in ipairs(PlayerGui:GetDescendants()) do hideIfCustomInventory(gui) end
+    PlayerGui.DescendantAdded:Connect(function(gui)
+        task.defer(hideIfCustomInventory, gui)
     end)
 
     task.spawn(function()
@@ -1142,7 +1173,7 @@ local function startPhoneBackpack(legacyGui)
 
     local function render()
         local humanoid = getHumanoid()
-        local active = legacyGui:GetAttribute("BackpackEnabled") ~= false and humanoid ~= nil and humanoid.Health > 0
+        local active = humanoid ~= nil and humanoid.Health > 0
         if panelOpen and (not active or #tools == 0) then
             setPanelOpen(false, not active)
         end
@@ -1333,7 +1364,6 @@ local function startPhoneBackpack(legacyGui)
         queueRefresh()
     end
 
-    legacyGui:GetAttributeChangedSignal("BackpackEnabled"):Connect(queueRefresh)
     LocalPlayer.ChildAdded:Connect(function(child)
         if child:IsA("Backpack") then bindBackpack(child) end
     end)
