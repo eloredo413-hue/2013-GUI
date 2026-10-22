@@ -790,8 +790,8 @@ end)
 ]]
 
 -- The 2013 payload only builds its phone backpack when its screen is 320px tall or less, so
--- modern phones get the 600x400 tablet window that covers most of the screen. On touch devices
--- its hotbar, inventory window and tab are hidden and replaced by the phone layout below.
+-- modern phones get the 600x400 tablet window that covers most of the screen. On phones its
+-- hotbar, inventory window and tab are hidden and replaced by the phone layout below.
 
 local function startPhoneBackpack(legacyGui)
     local SLOT_IMAGE = "rbxassetid://97613075"
@@ -1342,9 +1342,15 @@ local function startPhoneBackpack(legacyGui)
     bindCharacter(LocalPlayer.Character)
 end
 
+-- Phones only; tablets keep the payload's own backpack. Same small-screen rule Roblox's menus use.
+local function isPhoneScreen()
+    local viewport = workspace.CurrentCamera.ViewportSize
+    return math.min(viewport.X, viewport.Y) <= 500
+end
+
 if UserInputService.TouchEnabled then
     task.spawn(function()
         local legacyGui = CoreGui:WaitForChild("NewRobloxGui", 30)
-        if legacyGui then startPhoneBackpack(legacyGui) end
+        if legacyGui and isPhoneScreen() then startPhoneBackpack(legacyGui) end
     end)
 end
